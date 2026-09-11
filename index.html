@@ -16,13 +16,52 @@ canvas{display:block}
 #msg{position:fixed;inset:0;display:grid;place-items:center;font-size:44px;font-weight:1000;text-shadow:0 4px 12px #000;pointer-events:none}
 button{position:fixed;right:14px;top:14px;padding:9px 13px;border:1px solid #ffffff44;border-radius:10px;background:#ffffffdd;cursor:pointer;font-weight:800}
 #title{position:fixed;top:12px;left:14px;font-weight:1000;letter-spacing:2px;opacity:.8}
+
+#controls{display:none}
+@media (pointer:coarse){
+  #controls{display:block}
+  #controls button{
+    position:fixed !important;
+    z-index:1000;
+    width:62px !important;
+    height:62px !important;
+    min-width:62px;
+    min-height:62px;
+    padding:0 !important;
+    margin:0 !important;
+    border-radius:50% !important;
+    border:2px solid #ffffff66 !important;
+    background:#06101dcc !important;
+    color:#fff !important;
+    font-size:24px !important;
+    line-height:1 !important;
+    font-weight:900 !important;
+    touch-action:none;
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #controls small{display:block;font-size:8px;line-height:10px}
+  #left{left:14px !important;right:auto !important;top:auto !important;bottom:calc(22px + env(safe-area-inset-bottom)) !important}
+  #right{left:86px !important;right:auto !important;top:auto !important;bottom:calc(22px + env(safe-area-inset-bottom)) !important}
+  #drive{right:86px !important;left:auto !important;top:auto !important;bottom:calc(22px + env(safe-area-inset-bottom)) !important}
+  #boost{right:14px !important;left:auto !important;top:auto !important;bottom:calc(22px + env(safe-area-inset-bottom)) !important}
+  #jump{right:50% !important;left:auto !important;top:auto !important;transform:translateX(50%) !important;bottom:calc(96px + env(safe-area-inset-bottom)) !important;font-size:13px !important}
+  #hud{top:8px;min-width:0;width:100%;}
+  #score{font-size:20px;letter-spacing:1px;white-space:nowrap}
+  #time{font-size:16px}
+  #boostbar{width:145px;height:8px}
+  #help{display:none}
+  #title{top:8px;left:8px;font-size:11px}
+  #restart{right:8px !important;top:8px !important;padding:7px 9px !important;font-size:12px}
+}
 </style>
 </head>
 <body>
 <div id="title">TURBO BALL</div><div id="hud"><div id="score">BLUE 0 — 0 ORANGE</div><div id="time">2:00</div><div id="boostbar"><div id="boostfill"></div></div></div>
 <div id="msg"></div>
 <div id="help">WASD / Arrows: drive · Space: jump · Shift: boost · R: reset</div>
-<button id="restart">Restart</button>
+<button id="restart">Restart</button><div id="controls"><button id="left" aria-label="Steer left">◀</button><button id="right" aria-label="Steer right">▶</button><button id="drive" aria-label="Drive">▲<small>DRIVE</small></button><button id="boost" aria-label="Boost">⚡<small>BOOST</small></button><button id="jump" aria-label="Jump">JUMP</button></div>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script>
 const scene=new THREE.Scene();
@@ -86,7 +125,11 @@ const player=makeCar(0x29a9ff,0,12), bot=makeCar(0xff7a18,0,-12);
 bot.yaw=Math.PI;
 const ball=new THREE.Mesh(new THREE.SphereGeometry(1.25,32,20),mat(0xf4f4f4)); ball.position.set(0,1.25,0); ball.castShadow=true; scene.add(ball);
 let bv=new THREE.Vector3(), score=[0,0], time=120, over=false, msgTimer=0;
-const keys={}; addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyR')reset();}); addEventListener('keyup',e=>keys[e.code]=false);
+const keys={};
+const touch={left:false,right:false,drive:false,boost:false};
+function bindTouch(id,key){const el=document.getElementById(id);const down=e=>{e.preventDefault();touch[key]=true;try{el.setPointerCapture(e.pointerId)}catch(_){}};const up=e=>{e.preventDefault();touch[key]=false};el.addEventListener('pointerdown',down);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('pointerleave',up)}
+bindTouch('left','left');bindTouch('right','right');bindTouch('drive','drive');bindTouch('boost','boost');
+ addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyR')reset();}); addEventListener('keyup',e=>keys[e.code]=false);
 function reset(){
  player.g.position.set(0,0,12);player.vel.set(0,0,0);player.yaw=0;player.vy=0;player.boost=100;
  bot.g.position.set(0,0,-12);bot.vel.set(0,0,0);bot.yaw=Math.PI;bot.vy=0;
@@ -119,9 +162,9 @@ function drive(c,control,dt){
  if(!c.onGround){c.vy-=28*dt;p.y+=c.vy*dt;if(p.y<=0){p.y=0;c.vy=0;c.onGround=true}}
 }
 function playerControl(){
- return {throttle:(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0),
- steer:(keys.KeyA||keys.ArrowLeft?1:0)-(keys.KeyD||keys.ArrowRight?1:0),
- boost:keys.ShiftLeft||keys.ShiftRight};
+ return {throttle:(keys.KeyW||keys.ArrowUp||touch.drive?1:0)-(keys.KeyS||keys.ArrowDown?1:0),
+ steer:(keys.KeyA||keys.ArrowLeft||touch.left?1:0)-(keys.KeyD||keys.ArrowRight||touch.right?1:0),
+ boost:keys.ShiftLeft||keys.ShiftRight||touch.boost};
 }
 function botControl(){
  const target=ball.position.clone(); target.z+=3;
@@ -160,7 +203,7 @@ function loop(now){
  if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)document.getElementById('msg').textContent='';}
  renderer.render(scene,camera);
 }
-document.getElementById('restart').onclick=reset;
+document.getElementById('restart').onclick=reset;document.getElementById('jump').addEventListener('pointerdown',e=>{e.preventDefault();jump(player)});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 reset();loop(performance.now());
 </script>
