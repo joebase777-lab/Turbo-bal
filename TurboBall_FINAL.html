@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Turbo Ball — Car Soccer</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;touch-action:none;background:#050b13;font-family:system-ui,-apple-system,sans-serif;color:#fff}
+canvas{display:block}
+#hud{position:fixed;top:14px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;text-shadow:0 3px 8px #000;min-width:280px}
+#score{font-size:34px;font-weight:900;letter-spacing:3px}
+#time{font-size:18px;font-weight:800}
+#boostbar{margin:7px auto 0;width:170px;height:10px;border:2px solid #fff8;border-radius:99px;background:#0008;overflow:hidden}
+#boostfill{height:100%;width:100%;background:#ffd23f}
+#help{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:#06101dcc;border:1px solid #ffffff22;padding:9px 15px;border-radius:12px;font-size:13px;pointer-events:none;backdrop-filter:blur(5px)}
+#msg{position:fixed;inset:0;display:grid;place-items:center;font-size:44px;font-weight:1000;text-shadow:0 4px 12px #000;pointer-events:none}
+button{position:fixed;right:14px;top:14px;padding:9px 13px;border:1px solid #ffffff44;border-radius:10px;background:#ffffffdd;cursor:pointer;font-weight:800}
+#title{position:fixed;top:12px;left:14px;font-weight:1000;letter-spacing:2px;opacity:.8}
+
+#controls{display:none}
+@media (max-width:900px){
+  #controls{display:block !important}
+  #controls button{
+    position:fixed !important;
+    z-index:2000;
+    width:62px !important;
+    height:62px !important;
+    min-width:62px;
+    min-height:62px;
+    padding:0 !important;
+    margin:0 !important;
+    border-radius:50% !important;
+    border:2px solid #ffffff66 !important;
+    background:#06101dcc !important;
+    color:#fff !important;
+    font-size:24px !important;
+    line-height:1 !important;
+    font-weight:900 !important;
+    touch-action:none;
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #controls small{display:block;font-size:8px;line-height:10px}
+  #controls button.pressed{transform:scale(.94);background:#1d6b8dcc !important}
+  #left{left:14px !important;right:auto !important;top:auto !important;bottom:calc(58px + env(safe-area-inset-bottom)) !important}
+  #right{left:86px !important;right:auto !important;top:auto !important;bottom:calc(58px + env(safe-area-inset-bottom)) !important}
+  #drive{right:86px !important;left:auto !important;top:auto !important;bottom:calc(132px + env(safe-area-inset-bottom)) !important}
+  #back{right:86px !important;left:auto !important;top:auto !important;bottom:calc(58px + env(safe-area-inset-bottom)) !important}
+  #jump{right:158px !important;left:auto !important;top:auto !important;transform:none !important;bottom:calc(132px + env(safe-area-inset-bottom)) !important;font-size:13px !important}
+  #boost{right:14px !important;left:auto !important;top:auto !important;bottom:calc(132px + env(safe-area-inset-bottom)) !important}
+  #hud{top:8px;min-width:0;width:100%;}
+  #score{font-size:20px;letter-spacing:1px;white-space:nowrap}
+  #time{font-size:16px}
+  #boostbar{width:145px;height:8px}
+  #help{display:none !important}
+  #title{top:8px;left:8px;font-size:11px}
+  #restart{right:8px !important;top:8px !important;padding:7px 9px !important;font-size:12px}
+}
+</style>
+</head>
+<body>
+<div id="title">TURBO BALL</div><div id="hud"><div id="score">BLUE 0 — 0 ORANGE</div><div id="time">2:00</div><div id="boostbar"><div id="boostfill"></div></div></div>
+<div id="msg"></div>
+<div id="help">WASD / Arrows: drive · Space: jump · Shift: boost · R: reset</div>
+<button id="restart">Restart</button><div id="controls"><button id="left" aria-label="Steer left">◀</button><button id="right" aria-label="Steer right">▶</button><button id="drive" aria-label="Drive">▲<small>UP</small></button><button id="back" aria-label="Reverse">▼<small>DOWN</small></button><button id="boost" aria-label="Boost">⚡<small>BOOST</small></button><button id="jump" aria-label="Jump">JUMP</button></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x07121d);
+scene.fog=new THREE.Fog(0x07121d,35,80);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.1,200);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true; document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xbad8ff,0x17220f,2.0));
+const sun=new THREE.DirectionalLight(0xffffff,2.8); sun.position.set(10,25,8); sun.castShadow=true; scene.add(sun);
+
+const W=26,D=44;
+const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.72});
+const floor=new THREE.Mesh(new THREE.BoxGeometry(W,.5,D),mat(0x19733d)); floor.position.y=-.25; floor.receiveShadow=true; scene.add(floor);
+const lineMat=new THREE.MeshBasicMaterial({color:0xffffff});
+function box(x,y,z,sx,sy,sz,m){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=o.receiveShadow=true;scene.add(o);return o}
+box(-W/2-.5,1,0,1,2,D,mat(0x27465b)); box(W/2+.5,1,0,1,2,D,mat(0x27465b));
+// Open ends for the goals; side walls remain the field boundary.
+const goalNetMat=(c)=>new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:.22,side:THREE.DoubleSide});
+function netPanel(z,color){
+  // Open goal mouth with a visible grid net, not a solid wall.
+  const m=goalNetMat(color);
+  for(const x of [-5.5,-4,-2.5,-1,0.5,2,3.5,5]) box(x,2,z,0.045,4,.045,m);
+  for(const y of [.5,1.5,2.5,3.5]) box(0,y,z,12,.045,.045,m);
+}
+
+const center=new THREE.Mesh(new THREE.RingGeometry(5.5,5.7,64),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide}));
+center.rotation.x=-Math.PI/2; center.position.y=.02; scene.add(center);
+
+function goal(z,color){
+  const m=mat(color);
+  box(-6.2,2,z,1,4,1,m); box(6.2,2,z,1,4,1,m); box(0,4,z,13.4,1,1,m);
+  // net floor area
+  box(0,.05,z+(z<0?-2:2),12,.1,4,new THREE.MeshStandardMaterial({color,transparent:true,opacity:.18}));
+}
+goal(-D/2-.2,0x2196ff); goal(D/2+.2,0xff7a18);
+netPanel(-D/2-2.8,0x2196ff); netPanel(D/2+2.8,0xff7a18);
+
+const pads=[];
+for(const z of [-15,0,15]) for(const x of [-9,9]){
+ const pad=new THREE.Mesh(new THREE.CylinderGeometry(1,1,.12,24),new THREE.MeshBasicMaterial({color:0xffd23f}));
+ pad.rotation.x=0; pad.position.set(x,.08,z); scene.add(pad); pads.push(pad);
+}
+function collectBoost(c){
+ for(const pad of pads){
+  if(c.g.position.distanceTo(pad.position)<1.8 && c.boost<100){c.boost=Math.min(100,c.boost+45);pad.visible=false;setTimeout(()=>pad.visible=true,3000)}
+ }
+}
+
+
+function makeCar(color,x,z){
+ const g=new THREE.Group(), m=mat(color);
+ const body=new THREE.Mesh(new THREE.BoxGeometry(2.5,.72,4),m); body.position.y=.68; body.castShadow=true; g.add(body);
+ const hood=new THREE.Mesh(new THREE.BoxGeometry(2.2,.18,1.45),m); hood.position.set(0,1.02,1.05); hood.castShadow=true; g.add(hood);
+ const top=new THREE.Mesh(new THREE.BoxGeometry(1.65,.55,1.55),m); top.position.set(0,1.18,-.05); top.castShadow=true; g.add(top);
+ const spoiler=box(0,1.35,-1.78,2.35,.14,.18,m); spoiler.parent.remove(spoiler); g.add(spoiler);
+ for(const xw of [-1.18,1.18])for(const zw of [-1.28,1.28]){
+   const w=new THREE.Mesh(new THREE.CylinderGeometry(.43,.43,.34,18),mat(0x0b0d10));
+   w.rotation.z=Math.PI/2; w.position.set(xw,.43,zw); w.castShadow=true; g.add(w);
+ }
+ const lightMat=new THREE.MeshBasicMaterial({color:color===0x29a9ff?0x9fe8ff:0xffd0a0});
+ for(const xw of [-.72,.72]){let l=new THREE.Mesh(new THREE.BoxGeometry(.34,.16,.06),lightMat);l.position.set(xw,.74,2.02);g.add(l)}
+ const flame=new THREE.Mesh(new THREE.ConeGeometry(.24,.9,12),new THREE.MeshBasicMaterial({color:0xff9d22}));
+ flame.rotation.x=-Math.PI/2; flame.position.set(0,.55,-2.15); flame.visible=false; g.add(flame);
+ g.position.set(x,0,z); scene.add(g);
+ return {g,vel:new THREE.Vector3(),yaw:0,vy:0,onGround:true,boost:100,flame};
+}
+const player=makeCar(0x29a9ff,0,12), bot=makeCar(0xff7a18,0,-12);
+player.yaw=Math.PI;
+bot.yaw=0;
+const ball=new THREE.Mesh(new THREE.SphereGeometry(1.25,32,20),mat(0xf4f4f4)); ball.position.set(0,1.25,0); ball.castShadow=true; scene.add(ball);
+let bv=new THREE.Vector3(), score=[0,0], time=120, over=false, msgTimer=0;
+const keys={};
+const touch={left:false,right:false,drive:false,back:false,boost:false,jump:false};
+function bindTouch(id,key){
+ const el=document.getElementById(id);
+ const down=e=>{e.preventDefault();touch[key]=true;el.classList.add('pressed');try{el.setPointerCapture(e.pointerId)}catch(_){} };
+ const up=e=>{e.preventDefault();touch[key]=false;el.classList.remove('pressed')};
+ el.addEventListener('touchstart',down,{passive:false});
+ el.addEventListener('touchend',up,{passive:false});
+ el.addEventListener('touchcancel',up,{passive:false});
+ el.addEventListener('pointerdown',down,{passive:false});
+ el.addEventListener('pointerup',up,{passive:false});
+ el.addEventListener('pointercancel',up,{passive:false});
+ el.addEventListener('lostpointercapture',up,{passive:false});
+}
+addEventListener('touchend',()=>{touch.left=touch.right=touch.drive=touch.back=touch.boost=touch.jump=false;document.querySelectorAll('#controls button').forEach(b=>b.classList.remove('pressed'))},{passive:false});
+bindTouch('left','left');bindTouch('right','right');bindTouch('drive','drive');bindTouch('back','back');bindTouch('boost','boost');bindTouch('jump','jump');
+ addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyR')reset();}); addEventListener('keyup',e=>keys[e.code]=false);
+function reset(){
+ player.g.position.set(0,0,12);player.vel.set(0,0,0);player.yaw=Math.PI;player.g.rotation.y=player.yaw;player.vy=0;player.boost=100;
+ bot.g.position.set(0,0,-12);bot.vel.set(0,0,0);bot.yaw=0;bot.g.rotation.y=bot.yaw;bot.vy=0;
+ ball.position.set(0,1.25,0);bv.set(0,0,0); time=120;score=[0,0];over=false;
+}
+function hitCar(c,dt){
+ const p=c.g.position, to=ball.position.clone().sub(p);
+ const horizontal=Math.hypot(to.x,to.z);
+ if(horizontal<3.0 && Math.abs(to.y)<2.2){
+  const n=new THREE.Vector3(to.x,0,to.z);
+  if(n.lengthSq()<.001)n.set(Math.sin(c.yaw),0,Math.cos(c.yaw));
+  n.normalize();
+  const speed=Math.max(10,c.vel.length());
+  bv.addScaledVector(n,(22+speed*1.35)*dt*4);
+  if(to.y>0.25 || !c.onGround) bv.y+=5*dt;
+ }
+}
+function drive(c,control,dt){
+ const p=c.g.position, f=new THREE.Vector3(Math.sin(c.yaw),0,Math.cos(c.yaw));
+ const steer=control.steer, throttle=control.throttle;
+ const speedNow=c.vel.length();
+ c.yaw+=steer*dt*(0.28+Math.min(speedNow,17)*0.055);
+ c.g.rotation.y=c.yaw;
+ let accel=throttle*25;
+ let boosting=control.boost&&c.boost>0;
+ if(boosting){
+   accel=Math.max(accel,90);
+   c.boost=Math.max(0,c.boost-30*dt);
+ } else {
+   c.boost=Math.min(100,c.boost+12*dt);
+ }
+ c.vel.add(f.multiplyScalar(accel*dt));
+ const side=new THREE.Vector3(Math.cos(c.yaw),0,-Math.sin(c.yaw));
+ c.vel.addScaledVector(side,-c.vel.dot(side)*Math.min(1,9*dt));
+ c.vel.multiplyScalar(Math.pow(.08,dt));
+ const max=boosting?32:17; if(c.vel.length()>max)c.vel.setLength(max); c.flame.visible=boosting;
+ p.addScaledVector(c.vel,dt);
+ p.x=THREE.MathUtils.clamp(p.x,-11.3,11.3); p.z=THREE.MathUtils.clamp(p.z,-19.5,19.5);
+ if(!c.onGround){c.vy-=28*dt;p.y+=c.vy*dt;if(p.y<=0){p.y=0;c.vy=0;c.onGround=true}}
+}
+function playerControl(){
+ // Positive steer turns the visible car to the player's right.
+ return {throttle:(keys.KeyW||keys.ArrowUp||touch.drive?1:0)-(keys.KeyS||keys.ArrowDown||touch.back?1:0),
+ steer:(keys.KeyD||keys.ArrowRight||touch.right?1:0)-(keys.KeyA||keys.ArrowLeft||touch.left?1:0),
+ boost:keys.ShiftLeft||keys.ShiftRight||touch.boost};
+}
+function botControl(){
+ const target=ball.position.clone(); target.z-=3;
+ const p=bot.g.position, ang=Math.atan2(target.x-p.x,target.z-p.z);
+ let diff=Math.atan2(Math.sin(ang-bot.yaw),Math.cos(ang-bot.yaw));
+ return {throttle:1,steer:THREE.MathUtils.clamp(diff*1.6,-1,1),boost:Math.abs(diff)<.3&&bot.boost>20};
+}
+function goalCheck(){
+ if(ball.position.z<-22){score[1]++;flash('ORANGE SCORES!');kickoff();}
+ if(ball.position.z>22){score[0]++;flash('BLUE SCORES!');kickoff();}
+}
+function kickoff(){ball.position.set((Math.random()-.5)*5,1.25,0);bv.set(0,0,0);player.g.position.set(0,0,12);player.vel.set(0,0,0);player.yaw=Math.PI;player.g.rotation.y=player.yaw;bot.g.position.set(0,0,-12);bot.vel.set(0,0,0);}
+function flash(t){document.getElementById('msg').textContent=t;msgTimer=1.2}
+function ballPhysics(dt){
+ bv.y-=24*dt; ball.position.addScaledVector(bv,dt);
+ if(ball.position.y<1.25){ball.position.y=1.25;bv.y=Math.abs(bv.y)*.55}
+ if(Math.abs(ball.position.x)>11.8){ball.position.x=Math.sign(ball.position.x)*11.8;bv.x*=-.7}
+ if(Math.abs(ball.position.z)>24){bv.z*=-.7;ball.position.z=THREE.MathUtils.clamp(ball.position.z,-24,24)}
+ bv.multiplyScalar(Math.pow(.35,dt));
+}
+function jump(c){if(c.onGround){c.vy=11;c.onGround=false}}
+let last=performance.now();
+function loop(now){
+ requestAnimationFrame(loop);let dt=Math.min(.033,(now-last)/1000);last=now;
+ if(!over){
+  time-=dt;if(time<=0){time=0;over=true;flash(score[0]===score[1]?'DRAW!':score[0]>score[1]?'BLUE WINS!':'ORANGE WINS!')}
+  drive(player,playerControl(),dt);drive(bot,botControl(),dt);
+  if((keys.Space||touch.jump)&&!player._space){jump(player)} player._space=(keys.Space||touch.jump);
+  if(keys.Enter&&!bot._space){ } bot._space=keys.Enter;
+  hitCar(player,dt);hitCar(bot,dt);collectBoost(player);collectBoost(bot);ballPhysics(dt);goalCheck();
+ }
+ const target=player.g.position.clone().add(new THREE.Vector3(0,3,8));
+ camera.position.lerp(target,1-Math.pow(.00008,dt)); camera.lookAt(player.g.position.x,1.2,player.g.position.z-3);
+ document.getElementById('score').textContent=`BLUE ${score[0]} — ${score[1]} ORANGE`;
+ document.getElementById('time').textContent=`${Math.floor(time/60)}:${String(Math.floor(time%60)).padStart(2,'0')}`; document.getElementById('boostfill').style.width=player.boost+'%';
+ if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)document.getElementById('msg').textContent='';}
+ renderer.render(scene,camera);
+}
+document.getElementById('restart').onclick=reset;
+const jumpBtn=document.getElementById('jump');
+const jumpNow=e=>{e.preventDefault();jump(player)};
+jumpBtn.addEventListener('pointerdown',jumpNow,{passive:false});
+jumpBtn.addEventListener('touchstart',jumpNow,{passive:false});
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+reset();loop(performance.now());
+</script>
+</body></html>
